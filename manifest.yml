@@ -1,0 +1,20 @@
+modules:
+  jira:globalPage:
+    - key: staydesk-hello-world-global-page
+      resource: main
+      resolver:
+        function: resolver
+      render: native
+      title: staydesk
+  function:
+    - key: resolver
+      handler: index.handler
+resources:
+  - key: main
+    path: src/frontend/index.jsx
+app:
+  runtime:
+    name: nodejs24.x
+    memoryMB: 256
+    architecture: arm64
+  id: ari:cloud:ecosystem::app/bd6999d9-b202-4b0e-8350-183aa742b137
