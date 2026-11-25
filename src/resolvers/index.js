@@ -1,32 +1,19 @@
 import Resolver from '@forge/resolver';
-import { kvs } from '@forge/kvs';
 import { randomUUID } from 'crypto';
-import {
-  MAX_BYTES,
-  addRequest,
-  addUnit,
-  buildView,
-  normalizeData,
-  setStatus,
-} from './logic.js';
-
-const DATA_KEY = 'staydesk-data';
+import { loadData, saveData } from '../store.js';
+import { addRequest, addUnit, buildView, setStatus } from './logic.js';
 
 const resolver = new Resolver();
-
-async function loadData() {
-  return normalizeData(await kvs.get(DATA_KEY));
-}
 
 // Saves the new data and returns the refreshed view for the screen.
 async function saveAndRespond(result) {
   if (!result.ok) {
     return { ok: false, error: result.error };
   }
-  if (JSON.stringify(result.data).length > MAX_BYTES) {
+  const saved = await saveData(result.data);
+  if (!saved) {
     return { ok: false, error: 'Storage is full. Please resolve and remove old requests.' };
   }
-  await kvs.set(DATA_KEY, result.data);
   return { ok: true, view: buildView(result.data, Date.now()) };
 }
 

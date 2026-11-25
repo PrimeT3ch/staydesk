@@ -6,9 +6,82 @@ modules:
         function: resolver
       render: native
       title: StayDesk
+  rovo:agent:
+    - key: staydesk-assistant
+      name: StayDesk Assistant
+      description: Answers questions about your units and repair requests, spots repeat faults, and logs new requests from chat.
+      prompt: |
+        You are StayDesk Assistant, a practical operations helper for property and short-let managers.
+        You work with the data in the StayDesk app: units, repair requests, urgency and repeat faults.
+
+        Rules:
+        - Before answering any question about units, requests, urgency, repeat faults or trends, call the get-staydesk-summary action. Never guess or invent data.
+        - To focus on one unit, pass its name as unitName. Leave unitName empty to see all units.
+        - Lead with the answer, then give short supporting detail. Use a short bulleted list when there are several items.
+        - A "repeat fault" means the same unit has had the same category of problem at least twice in 90 days. When repeat faults exist, mention them and suggest a permanent fix, such as asking a technician to inspect the whole system instead of patching each symptom again.
+        - When the user asks what to fix first, list the most urgent open requests first and point out any repeat faults.
+        - To log a request, you need four things: the unit name, a category, an urgency, and a short description of the problem (3 to 100 characters). Valid categories are Plumbing, Electrical, Air conditioning, Appliance, Cleaning, Furniture, Internet and Other. Valid urgencies are Low, Medium and High. Ask the user for anything that is missing. Never make up a unit name, and never choose the urgency for the user.
+        - After you call log-repair-request, tell the user exactly what was logged. If the result says it is a repeat fault, say so clearly.
+        - If StayDesk has no units yet, tell the user to add their units on the StayDesk page in Jira first.
+        - Do not give legal or financial advice. Keep answers short and friendly.
+      conversationStarters:
+        - Which units have repeat faults?
+        - What should I fix first today?
+        - Summarize open requests by unit
+        - Log a repair request
+      actions:
+        - get-staydesk-summary
+        - log-repair-request
+  action:
+    - key: get-staydesk-summary
+      name: Get StayDesk summary
+      function: summary-fn
+      actionVerb: GET
+      description: Reads the current StayDesk data and returns a plain-text report of units, open requests sorted by urgency, repeat faults and recently resolved requests. Use it before answering any question about the data.
+      inputs:
+        unitName:
+          title: Unit name
+          type: string
+          required: false
+          description: |
+            Optional. The name of one unit to focus the report on, for example "Maitama 2B". Leave empty to include all units.
+    - key: log-repair-request
+      name: Log repair request
+      function: log-request-fn
+      actionVerb: CREATE
+      description: Logs a new repair request for a unit in StayDesk. Only call it after the user has given the unit, category, urgency and description.
+      inputs:
+        unitName:
+          title: Unit name
+          type: string
+          required: true
+          description: |
+            The name of the unit the problem is in. It must match an existing unit.
+        category:
+          title: Category
+          type: string
+          required: true
+          description: |
+            One of: Plumbing, Electrical, Air conditioning, Appliance, Cleaning, Furniture, Internet, Other.
+        urgency:
+          title: Urgency
+          type: string
+          required: true
+          description: |
+            One of: Low, Medium, High.
+        description:
+          title: Description
+          type: string
+          required: true
+          description: |
+            A short description of the problem, between 3 and 100 characters, for example "Bathroom sink is leaking".
   function:
     - key: resolver
       handler: index.handler
+    - key: summary-fn
+      handler: index.getStayDeskSummary
+    - key: log-request-fn
+      handler: index.logRepairRequest
 resources:
   - key: main
     path: src/frontend/index.jsx

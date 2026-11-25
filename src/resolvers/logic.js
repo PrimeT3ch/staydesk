@@ -150,3 +150,99 @@ export function buildView(data, nowMs) {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Helpers used by the Rovo agent actions
+// ---------------------------------------------------------------------------
+
+// Returns the canonical value from `list` that matches `value` ignoring case, or null.
+export function matchChoice(list, value) {
+  if (typeof value !== 'string') return null;
+  const wanted = value.trim().toLowerCase();
+  return list.find((item) => item.toLowerCase() === wanted) || null;
+}
+
+// Finds a unit by name: exact match (ignoring case) first, then a unique "contains" match.
+export function findUnit(data, name) {
+  if (typeof name !== 'string' || name.trim() === '') return null;
+  const wanted = name.trim().toLowerCase();
+  const exact = data.units.find((u) => u.name.toLowerCase() === wanted);
+  if (exact) return exact;
+  const partial = data.units.filter((u) => u.name.toLowerCase().includes(wanted));
+  return partial.length === 1 ? partial[0] : null;
+}
+
+const dateOnly = (iso) => String(iso).slice(0, 10);
+
+// Plain-text report that the Rovo agent reads to answer questions.
+export function buildReport(data, nowMs, unitFilter) {
+  const view = buildView(data, nowMs);
+  const today = new Date(nowMs).toISOString().slice(0, 10);
+
+  if (view.units.length === 0) {
+    return 'StayDesk has no units yet. The user needs to add units on the StayDesk page in Jira before there is anything to report.';
+  }
+
+  let units = view.units;
+  let requests = view.requests;
+  let scope = 'all units';
+  if (typeof unitFilter === 'string' && unitFilter.trim() !== '') {
+    const unit = findUnit(data, unitFilter);
+    if (!unit) {
+      return `No single unit matches "${unitFilter.trim()}". Existing units: ${view.units
+        .map((u) => u.name)
+        .join(', ')}.`;
+    }
+    units = view.units.filter((u) => u.id === unit.id);
+    requests = view.requests.filter((r) => r.unitId === unit.id);
+    scope = unit.name;
+  }
+
+  const open = requests.filter((r) => r.status === 'Open');
+  const resolved = requests.filter((r) => r.status === 'Resolved');
+  const lines = [];
+  lines.push(`StayDesk report for ${scope} (as of ${today}).`);
+  lines.push(
+    `Units (${units.length}): ${units.map((u) => `${u.name} (${u.openCount} open)`).join(', ')}.`
+  );
+
+  if (open.length === 0) {
+    lines.push('There are no open requests.');
+  } else {
+    lines.push(`Open requests (${open.length}), most urgent first:`);
+    open.forEach((r, i) => {
+      const repeat = r.isRepeat ? ` | REPEAT FAULT x${r.repeatCount} in ${REPEAT_WINDOW_DAYS} days` : '';
+      lines.push(
+        `${i + 1}. [${r.urgency}] ${r.unitName} | ${r.category} | ${r.title} | logged ${dateOnly(r.createdAt)}${repeat}`
+      );
+    });
+  }
+
+  // Repeat-fault groups among open requests.
+  const groups = new Map();
+  open
+    .filter((r) => r.isRepeat)
+    .forEach((r) => {
+      const key = `${r.unitName} / ${r.category}`;
+      const g = groups.get(key) || { count: r.repeatCount, open: 0 };
+      g.open += 1;
+      groups.set(key, g);
+    });
+  if (groups.size > 0) {
+    lines.push('Repeat faults (same unit and category at least twice in 90 days):');
+    groups.forEach((g, key) =>
+      lines.push(`- ${key}: ${g.count} problems in ${REPEAT_WINDOW_DAYS} days, ${g.open} still open`)
+    );
+  } else {
+    lines.push('No repeat faults right now.');
+  }
+
+  if (resolved.length > 0) {
+    const recent = resolved.slice(0, 5);
+    lines.push(`Recently resolved (showing ${recent.length} of ${resolved.length}):`);
+    recent.forEach((r) =>
+      lines.push(`- ${r.unitName} | ${r.category} | ${r.title} | logged ${dateOnly(r.createdAt)}`)
+    );
+  }
+  return lines.join('\n');
+}
